@@ -6,4 +6,4 @@ extends Area2D
 
 func _on_area_entered(area):
 	if area.name == "Ball":
-		area.direction = (area.direction + Vector2(0, _bounce_direction)).normalized()
+		area.bounce_off_horizontal(_bounce_direction)
