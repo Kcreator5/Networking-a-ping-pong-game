@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://logic/title_screen.gd" id="1_title"]
-[ext_resource type="Texture2D" path="res://Title_screen.png" id="2_bg"]
+[ext_resource type="Texture2D" path="res://Title_screen_mobile_version.png" id="2_bg"]
+[ext_resource type="Texture2D" path="res://play_button_text.png" id="3_play"]
 
 [node name="TitleScreen" type="Control"]
 anchors_preset = 15
@@ -12,67 +13,29 @@ grow_vertical = 2
 script = ExtResource("1_title")
 
 [node name="Background" type="Sprite2D" parent="."]
-position = Vector2(388, 284)
-scale = Vector2(0.9304556, 1.2267818)
 texture = ExtResource("2_bg")
 centered = true
 
-[node name="OnePlayerButton" type="Button" parent="."]
-offset_left = 279.0
-offset_top = 221.0
-offset_right = 499.0
-offset_bottom = 282.0
+[node name="OnePlayerButton" type="TextureButton" parent="."]
+offset_left = 83.0
+offset_top = 520.0
+offset_right = 277.0
+offset_bottom = 635.0
 focus_mode = 0
 mouse_default_cursor_shape = 2
-text = ""
-flat = true
+texture_normal = ExtResource("3_play")
+ignore_texture_size = true
+stretch_mode = 0
 
-[node name="TwoPlayersButton" type="Button" parent="."]
-offset_left = 279.0
-offset_top = 309.0
-offset_right = 502.0
-offset_bottom = 372.0
-focus_mode = 0
-mouse_default_cursor_shape = 2
-text = ""
-flat = true
-
-[node name="ExitButton" type="Button" parent="."]
-offset_left = 340.0
-offset_top = 438.0
-offset_right = 436.0
-offset_bottom = 485.0
-focus_mode = 0
-mouse_default_cursor_shape = 2
-text = ""
-flat = true
-[node name="Player1Button" type="Button" parent="."]
-visible = false
-offset_left = 528.0
-offset_top = 300.0
-offset_right = 708.0
-offset_bottom = 360.0
-focus_mode = 0
-mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 30
-text = "Player 1"
-
-[node name="Player2Button" type="Button" parent="."]
-visible = false
-offset_left = 68.0
-offset_top = 300.0
-offset_right = 248.0
-offset_bottom = 360.0
-focus_mode = 0
-mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 30
-text = "Player 2"
 [node name="NetworkStatus" type="Label" parent="."]
-offset_left = 98.0
-offset_top = 514.0
-offset_right = 678.0
-offset_bottom = 552.0
+visible = false
+offset_left = 12.0
+offset_top = 724.0
+offset_right = 348.0
+offset_bottom = 762.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 16
 text = "Offline"
 horizontal_alignment = 1
+
+

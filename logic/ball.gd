@@ -1,41 +1,42 @@
 extends Area2D
 
 
-const DEFAULT_SPEED = 150.0
+const DEFAULT_SPEED = 100.0
 const SERVE_HELD = 0
 const SERVE_TOSSED = 1
 const SERVE_IN_PLAY = 2
 
 @export_range(1.0, 10.0, 0.1) var height_indicator = 1.0
 @export var bounce_enabled = true
-@export var height_gravity = 12.0
+@export var ball_gravity = 32.0
 @export var serve_gravity_scale = 0.65
-@export var serve_toss_velocity = 8.0
+@export var serve_toss_velocity = 10.0
 @export var serve_landing_bounce = 0.35
 @export var serve_paddle_collision_delay = 0.5
 @export var serve_collision_delay_tint = Color(0.7, 0.8, 1.0, 0.75)
-@export var height_floor_bounce = 0.65
+@export var ball_bounciness = 0.90
 @export var min_table_bounce_velocity = 3.5
-@export var table_bounds = Rect2(52, 36, 536, 328)
+@export var table_bounds = Rect2(38, 132, 284, 536)
 @export var table_surface_height = 1.0
-@export var floor_surface_height = 0.0
+@export var floor_surface_height = -1.0
 @export var despawn_on_floor = true
-@export var respawn_delay = 1.0
+@export var respawn_delay = 0.6
 @export var serving_paddle_path: NodePath = NodePath("../Right")
 @export var serve_follow_distance = 30.0
-@export var height_hit_impulse = 7.0
-@export var height_hit_impulse_from_paddle = 7.0
+@export var height_hit_impulse = 4.0
+@export var height_hit_impulse_from_paddle = 4.0
 @export var max_visual_height = 28.0
 @export var max_visual_scale = 1.8
-@export var speed_increase_per_second = 2.0
-@export var min_speed = 90.0
-@export var max_speed = 420.0
-@export var hit_strength_for_max = 320.0
-@export var min_hit_speed_boost = 8.0
+@export var speed_increase_per_second = 0.2
+@export var min_speed = 50.0
+@export var max_speed = 280.0
+@export var hit_strength_for_max = 200.0
+@export var min_hit_speed_boost = 0.0
 @export var max_hit_speed_boost = 85.0
 @export var backward_hit_slowdown_scale = 0.75
-@export var paddle_velocity_influence = 0.18
-@export var min_bounce_x_strength = 0.35
+@export var paddle_velocity_influence = 1.0
+@export var paddle_vertical_influence = 0.45
+@export var min_bounce_x_strength = 0.30
 @export var score_on_floor_landing = true
 
 var _speed = DEFAULT_SPEED
@@ -107,6 +108,13 @@ func is_serving_for(paddle):
 	return _serve_state == SERVE_HELD and paddle == _serving_paddle
 
 
+func set_serving_paddle(paddle):
+	_serving_paddle = paddle
+	serving_paddle_path = get_path_to(paddle)
+	if _serve_state == SERVE_HELD:
+		_follow_serving_paddle()
+
+
 func toss_serve_from(paddle):
 	if not is_serving_for(paddle):
 		return false
@@ -137,34 +145,39 @@ func hit_paddle(paddle, exit_direction):
 	if _serve_collision_delay_remaining > 0.0:
 		return false
 
+	var exit_vector = Vector2(exit_direction, 0)
+	if paddle.has_method("get_exit_vector"):
+		exit_vector = paddle.get_exit_vector().normalized()
+	if exit_vector == Vector2.ZERO:
+		exit_vector = Vector2.RIGHT
+	var tangent_vector = Vector2(-exit_vector.y, exit_vector.x)
+
 	_reset_table_bounce_tracking()
-	var surface_normal = Vector2(exit_direction, 0).rotated(paddle.rotation)
 	var incoming_velocity = velocity
 	if _serve_state == SERVE_TOSSED:
-		incoming_velocity = Vector2(-exit_direction, 0) * DEFAULT_SPEED
+		incoming_velocity = -exit_vector * DEFAULT_SPEED
 		_speed = DEFAULT_SPEED
 		_serve_state = SERVE_IN_PLAY
 
-	var reflected_velocity = _reflect_velocity(incoming_velocity, surface_normal)
+	var forward_speed = max(abs(incoming_velocity.dot(exit_vector)), DEFAULT_SPEED)
+	var reflected_velocity = exit_vector * forward_speed
+
 	var paddle_velocity = Vector2.ZERO
 	var hit_strength = 0.0
 	var forward_hit_strength = 0.0
-
-	if sign(reflected_velocity.x) != sign(exit_direction):
-		reflected_velocity.x = abs(reflected_velocity.x) * exit_direction
-
-	if abs(reflected_velocity.normalized().x) < min_bounce_x_strength:
-		reflected_velocity.x = max(_speed, DEFAULT_SPEED) * min_bounce_x_strength * exit_direction
-
 	if paddle.has_method("get_paddle_velocity"):
 		paddle_velocity = paddle.get_paddle_velocity()
 		hit_strength = clamp(paddle_velocity.length() / hit_strength_for_max, 0.0, 1.0)
-		forward_hit_strength = clamp(
-			paddle_velocity.dot(Vector2(exit_direction, 0)) / hit_strength_for_max,
-			-1.0,
-			1.0
-		)
-		reflected_velocity += paddle_velocity * paddle_velocity_influence
+		forward_hit_strength = clamp(paddle_velocity.dot(exit_vector) / hit_strength_for_max, -1.0, 1.0)
+		reflected_velocity += exit_vector * paddle_velocity.dot(exit_vector) * paddle_velocity_influence
+		reflected_velocity += tangent_vector * paddle_velocity.dot(tangent_vector) * paddle_vertical_influence
+
+	if reflected_velocity.dot(exit_vector) <= 0.0:
+		reflected_velocity += exit_vector * (abs(reflected_velocity.dot(exit_vector)) + DEFAULT_SPEED * min_bounce_x_strength)
+
+	var normalized_hit = reflected_velocity.normalized()
+	if abs(normalized_hit.dot(exit_vector)) < min_bounce_x_strength:
+		reflected_velocity += exit_vector * max(_speed, DEFAULT_SPEED) * min_bounce_x_strength
 
 	var speed_change = 0.0
 	if forward_hit_strength > 0.0:
@@ -202,7 +215,7 @@ func _update_height_physics(delta):
 		return
 
 	var surface_height = _get_surface_height()
-	var gravity = height_gravity
+	var gravity = ball_gravity
 	if _serve_state == SERVE_TOSSED:
 		gravity *= serve_gravity_scale
 
@@ -228,7 +241,7 @@ func _update_height_physics(delta):
 
 		if height_velocity < 0.0:
 			_record_table_bounce()
-			height_velocity = max(abs(height_velocity) * height_floor_bounce, min_table_bounce_velocity)
+			height_velocity = max(abs(height_velocity) * ball_bounciness, min_table_bounce_velocity)
 
 	if height_indicator >= 10.0:
 		height_indicator = 10.0
@@ -289,7 +302,7 @@ func _score_floor_landing():
 
 
 func _get_position_side():
-	if position.x < table_bounds.position.x + table_bounds.size.x * 0.5:
+	if position.y < table_bounds.position.y + table_bounds.size.y * 0.5:
 		return "left"
 	return "right"
 
@@ -318,7 +331,7 @@ func _follow_serving_paddle():
 	var side = -1.0
 	if String(_serving_paddle.name).to_lower() == "left":
 		side = 1.0
-	position = _serving_paddle.position + Vector2(serve_follow_distance * side, 0)
+	position = _serving_paddle.position + Vector2(0, serve_follow_distance * side)
 
 
 func _update_fake_height_visual():

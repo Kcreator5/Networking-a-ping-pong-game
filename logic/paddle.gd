@@ -12,10 +12,14 @@ const MOVE_SPEED = 300
 @export var mouse_snap_distance = 3.0
 @export var mouse_min_x = 16.0
 @export var mouse_max_x = -1.0
+@export var mouse_min_y = 16.0
+@export var mouse_max_y = -1.0
 @export var keyboard_control = false
 @export var keyboard_allow_horizontal = true
 @export var keyboard_min_x = 16.0
 @export var keyboard_max_x = -1.0
+@export var keyboard_min_y = 16.0
+@export var keyboard_max_y = -1.0
 @export var keyboard_topspin_key = KEY_SPACE
 @export var keyboard_backspin_key = KEY_Q
 @export var rotate_with_mouse_buttons = false
@@ -34,14 +38,21 @@ const MOVE_SPEED = 300
 @export var use_mouse_spin_controls = false
 @export var use_keyboard_spin_controls = false
 @export var use_debug_frame_keys = false
+@export var touch_control_enabled = true
+@export var touch_velocity_multiplier = 1.0
+@export var touch_velocity_falloff = 12.0
 
 var paddle_velocity = Vector2.ZERO
 var paddle_speed = 0.0
 var paddle_rotation_degrees = 0.0
 var paddle_angular_velocity = 0.0
 var hit_cooldown_remaining = 0.0
+var touch_control_active = false
+var _last_sampled_position = Vector2.ZERO
+var _recent_touch_velocity = Vector2.ZERO
 
 var _ball_dir
+var _exit_vector = Vector2.RIGHT
 var _up
 var _down
 var _base_sprite_modulate = Color.WHITE
@@ -61,8 +72,10 @@ func _ready():
 	_down = n + "_move_down"
 	if n == "left":
 		_ball_dir = 1
+		_exit_vector = Vector2.DOWN
 	else:
 		_ball_dir = -1
+		_exit_vector = Vector2.UP
 	if _sprite != null:
 		_base_sprite_modulate = _sprite.modulate
 	_apply_sprite_frame()
@@ -100,10 +113,16 @@ func _process(delta):
 	_update_hit_cooldown(delta)
 	_update_spin_animation(delta)
 
+	if touch_control_active:
+		_sample_position_velocity(delta)
+		return
+
+	_decay_recent_touch_velocity(delta)
+
 	if follow_mouse:
 		var mouse_position = get_global_mouse_position()
 		var target_position = position
-		target_position.y = clamp(mouse_position.y, 16, _screen_size_y - 16)
+		target_position.y = clamp(mouse_position.y, _get_min_y(), _get_max_y())
 
 		if follow_mouse_horizontal:
 			var max_x = mouse_max_x
@@ -112,9 +131,12 @@ func _process(delta):
 			target_position.x = clamp(mouse_position.x, mouse_min_x, max_x)
 
 		if True_mouse_follow:
+			if delta > 0.0:
+				paddle_velocity = (target_position - position) / delta
+			else:
+				paddle_velocity = Vector2.ZERO
 			position = target_position
-			paddle_velocity = Vector2.ZERO
-			paddle_speed = 0.0
+			paddle_speed = paddle_velocity.length()
 			return
 
 		_move_with_velocity(target_position, delta)
@@ -128,7 +150,7 @@ func _process(delta):
 	var input = Input.get_action_strength(_down) - Input.get_action_strength(_up)
 	paddle_velocity = Vector2(0, input * MOVE_SPEED)
 	paddle_speed = abs(paddle_velocity.y)
-	position.y = clamp(position.y + paddle_velocity.y * delta, 16, _screen_size_y - 16)
+	position.y = clamp(position.y + paddle_velocity.y * delta, _get_min_y(), _get_max_y())
 
 
 func _on_area_entered(area):
@@ -141,7 +163,13 @@ func _on_area_entered(area):
 			_update_cooldown_visual()
 
 
+func get_exit_vector():
+	return _exit_vector
+
+
 func get_paddle_velocity():
+	if _recent_touch_velocity.length() > paddle_velocity.length():
+		return _recent_touch_velocity
 	return paddle_velocity
 
 
@@ -188,25 +216,9 @@ func _update_cooldown_visual():
 
 
 func _update_rotation(delta):
-	if not rotate_with_mouse_buttons:
-		paddle_rotation_degrees = rotation_degrees
-		paddle_angular_velocity = 0.0
-		return
-
-	var rotation_input = 0.0
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		rotation_input += 1.0
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		rotation_input -= 1.0
-
-	var previous_rotation = rotation_degrees
-	rotation_degrees = clamp(
-		rotation_degrees + rotation_input * rotation_speed_degrees * delta,
-		min_rotation_degrees,
-		max_rotation_degrees
-	)
-	paddle_rotation_degrees = rotation_degrees
-	paddle_angular_velocity = (rotation_degrees - previous_rotation) / delta
+	rotation_degrees = 0.0
+	paddle_rotation_degrees = 0.0
+	paddle_angular_velocity = 0.0
 
 
 func _change_serve_angle(delta_degrees):
@@ -267,6 +279,64 @@ func _update_spin_animation(delta):
 		_set_sprite_frame(_spin_animation_frames[_spin_animation_index])
 
 
+func start_touch_control(global_position, delta = 0.0):
+	if not touch_control_enabled:
+		return
+
+	touch_control_active = true
+	_last_sampled_position = position
+	_teleport_to_touch(global_position, delta)
+	_sample_position_velocity(max(delta, get_process_delta_time()))
+
+
+func update_touch_control(global_position, delta = 0.0):
+	if not touch_control_enabled or not touch_control_active:
+		return
+
+	_teleport_to_touch(global_position, delta)
+
+
+func end_touch_control():
+	touch_control_active = false
+	paddle_velocity = _recent_touch_velocity
+	paddle_speed = paddle_velocity.length()
+
+
+func _teleport_to_touch(global_position, delta):
+	var target_position = position
+	target_position.y = clamp(global_position.y, _get_min_y(), _get_max_y())
+
+	var min_x = keyboard_min_x
+	var max_x = keyboard_max_x
+	if follow_mouse:
+		min_x = mouse_min_x
+		max_x = mouse_max_x
+	if max_x < 0:
+		max_x = _screen_size_x - 16
+	target_position.x = clamp(global_position.x, min_x, max_x)
+
+	if delta > 0.0:
+		paddle_velocity = (target_position - position) / delta
+	else:
+		paddle_velocity = Vector2.ZERO
+	position = target_position
+	paddle_speed = paddle_velocity.length()
+
+func _sample_position_velocity(delta):
+	if delta <= 0.0:
+		return
+
+	var measured_velocity = (position - _last_sampled_position) / delta * touch_velocity_multiplier
+	if measured_velocity.length() > 0.01:
+		paddle_velocity = measured_velocity
+		_recent_touch_velocity = measured_velocity
+		paddle_speed = paddle_velocity.length()
+	_last_sampled_position = position
+
+
+func _decay_recent_touch_velocity(delta):
+	_recent_touch_velocity = _recent_touch_velocity.move_toward(Vector2.ZERO, touch_velocity_falloff * max(_recent_touch_velocity.length(), 1.0) * delta)
+
 func _move_with_keyboard(delta):
 	var input = Vector2.ZERO
 	if keyboard_allow_horizontal:
@@ -284,7 +354,7 @@ func _move_with_keyboard(delta):
 	if max_x < 0:
 		max_x = _screen_size_x - 16
 	position.x = clamp(position.x, keyboard_min_x, max_x)
-	position.y = clamp(position.y, 16, _screen_size_y - 16)
+	position.y = clamp(position.y, _get_min_y(), _get_max_y())
 
 
 func _move_with_velocity(target_position, delta):
@@ -318,15 +388,29 @@ func _move_with_velocity(target_position, delta):
 	if max_x < 0:
 		max_x = _screen_size_x - 16
 	position.x = clamp(position.x, mouse_min_x, max_x)
-	position.y = clamp(position.y, 16, _screen_size_y - 16)
+	position.y = clamp(position.y, _get_min_y(), _get_max_y())
 
 	if is_equal_approx(position.x, mouse_min_x) or is_equal_approx(position.x, max_x):
 		paddle_velocity.x = 0
-	if is_equal_approx(position.y, 16) or is_equal_approx(position.y, _screen_size_y - 16):
+	if is_equal_approx(position.y, _get_min_y()) or is_equal_approx(position.y, _get_max_y()):
 		paddle_velocity.y = 0
 
 	paddle_speed = paddle_velocity.length()
 
+
+func _get_min_y():
+	if follow_mouse:
+		return mouse_min_y
+	return keyboard_min_y
+
+
+func _get_max_y():
+	var max_y = keyboard_max_y
+	if follow_mouse:
+		max_y = mouse_max_y
+	if max_y < 0:
+		max_y = _screen_size_y - 16
+	return max_y
 
 func _change_sprite_frame(direction):
 	var max_frame_index = max(sprite_frame_count - 1, 0)
