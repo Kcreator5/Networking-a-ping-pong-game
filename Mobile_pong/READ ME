@@ -1,0 +1,36 @@
+# Table some tennis (Mobile)
+
+Table some tennis now on your phone!
+
+## Instructions for Build and Use
+
+Steps to build and/or run the software:
+
+1. Download Table_some_tennis.apk
+2. Make sure your phone allows installs, you might have to edit some setting in Google play in oder to install the app.
+3. Open app and enjoy
+
+Instructions for using the software:
+
+1. Tap once to serve
+2. Slide to move the paddle
+3. It's movement based aiming
+
+## Development Environment
+
+To recreate the development environment, you need the following software and/or libraries with the specified versions:
+
+You just need to install it.
+
+## Useful Websites to Learn More
+
+I found these websites useful in developing this software:
+
+* Codex, Godot, 
+
+## Future Work
+
+The following items I plan to fix, improve, and/or add to this project in the future:
+
+* [ ] First thing I would do would impliment the propor table tennis rules into it, and I would edit the feel of the game.
+ Then I would create some better art assets for it
